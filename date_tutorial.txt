@@ -1,0 +1,183 @@
+Heutiges Datum und Uhrzeit
+==========================
+
+import java.time.*;
+
+LocalDate d = LocalDate.now();        // nur Datum
+LocalTime t = LocalTime.now();        // nur Uhrzeit
+LocalDateTime dt = LocalDateTime.now();  // Datum + Uhrzeit
+ZonedDateTime zdt = ZonedDateTime.now(); // mit Zeitzone
+
+
+
+Eigenes Datum/Uhrzeit erzeugen
+==============================
+
+LocalDate d = LocalDate.of(2025, 12, 9);
+LocalTime t = LocalTime.of(14, 30);
+LocalDateTime dt = LocalDateTime.of(2025, 12, 9, 14, 30);
+
+
+
+Addieren / Subtrahieren
+=======================
+
+LocalDate d = LocalDate.now();
+
+LocalDate plus10 = d.plusDays(10);
+LocalDate minus2M = d.minusMonths(2);
+
+LocalDateTime dt = LocalDateTime.now().plusHours(5).minusMinutes(30);
+
+
+
+Formatieren ⇒ String
+=====================
+
+import java.time.format.DateTimeFormatter;
+
+LocalDateTime dt = LocalDateTime.now();
+String s = dt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+
+
+
+Parsieren ⇒ String → Datum
+===========================
+
+String s = "2025-12-09 14:30";
+DateTimeFormatter f = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+LocalDateTime dt = LocalDateTime.parse(s, f);
+
+
+
+Zeitzonen
+=========
+
+ZonedDateTime utc = ZonedDateTime.now(ZoneId.of("UTC"));
+ZonedDateTime vienna = utc.withZoneSameInstant(ZoneId.of("Europe/Vienna"));
+
+
+
+Zeitraum in Tagen/Monaten/Jahren
+================================
+
+LocalDate a = LocalDate.of(2025, 1, 1);
+LocalDate b = LocalDate.of(2025, 3, 15);
+
+Period p = Period.between(a, b);
+int days = p.getDays();     // nur der Tagesanteil
+int months = p.getMonths(); // Monatsanteil
+
+
+
+MYSQL Beispiele:
+================
+
+----------------------------------------------------------------------------------------------------------
+Seit JDBC 4.2 kannst du die java.time-Typen direkt setzen und lesen – kein Umweg über java.sql.Date nötig.
+MySQL Connector/J ≥ 8.0 verwenden.
+
+OLDstyle:
+ps.setDate(1, java.sql.Date.valueOf(localDate));
+ps.setTimestamp(1, Timestamp.valueOf(localDateTime));
+
+Problem: JVM und MySQL nicht synchron (Timezone-Mismatch)
+jdbc:mysql://host/db?connectionTimeZone=UTC&serverTimeZone=UTC
+
+Mapping-Tabelle
+MySQL-Typ	Java-Typ	    Hinweis
+DATE	    LocalDate	    sicher, kein TZ-Problem
+TIME	    LocalTime	    sicher
+DATETIME	LocalDateTime	enthält keine TZ
+TIMESTAMP	Instant	        immer UTC
+
+----------------------------------------------------------------------------------------------------------
+
+
+String sql = "INSERT INTO tabelle (geburtstag) VALUES (?)";
+
+try (PreparedStatement ps = conn.prepareStatement(sql)) {
+    ps.setObject(1, LocalDate.of(1990, 5, 12));
+    ps.executeUpdate();
+}
+
+
+String sql = "INSERT INTO log (zeitpunkt) VALUES (?)";
+
+try (PreparedStatement ps = conn.prepareStatement(sql)) {
+    ps.setObject(1, LocalDateTime.now());
+    ps.executeUpdate();
+}
+
+
+Instant now = Instant.now(); //in UTC!!
+ZonedDateTime local = now.atZone(ZoneId.of("Europe/Vienna")); //<-wenn gewünscht
+
+PreparedStatement ps = conn.prepareStatement(
+    "INSERT INTO events(ts) VALUES (?)"
+);
+ps.setObject(1, now);   // funktioniert direkt
+ps.executeUpdate();
+
+
+
+// nach einem select ResultSet auslesen
+LocalDate d = rs.getObject("geburtstag", LocalDate.class);
+LocalDateTime dt = rs.getObject("zeitpunkt", LocalDateTime.class);
+Instant inst = rs.getObject("ts", Instant.class);
+
+
+# MINI-Beispiel:
+
+CREATE TABLE logeintrag (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    text VARCHAR(200),
+    created_at DATETIME NOT NULL
+);
+
+import java.sql.*;
+import java.time.*;
+
+public class Demo {
+
+    public static void main(String[] args) throws Exception {
+
+        String url = "jdbc:mysql://localhost:3306/testdb?connectionTimeZone=UTC&serverTimeZone=UTC";
+        String user = "user";
+        String pass = "userpass";
+
+        try (Connection conn = DriverManager.getConnection(url, user, pass)) {
+
+            // INSERT ---------------------------------------------------------
+            String insertSql = "INSERT INTO logeintrag (text, created_at) VALUES (?, ?)";
+            try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+
+                LocalDateTime now = LocalDateTime.now();  // aktuelles Datum+Uhrzeit
+
+                ps.setString(1, "Start der Anwendung");
+                ps.setObject(2, now);                     // JDBC 4.2: direkter java.time Support
+                ps.executeUpdate();
+            }
+
+            // SELECT ---------------------------------------------------------
+            String selectSql = "SELECT id, text, created_at FROM logeintrag ORDER BY id DESC LIMIT 1";
+            try (PreparedStatement ps = conn.prepareStatement(selectSql)) {
+                ResultSet rs = ps.executeQuery();
+
+                if (rs.next()) {
+                    int id = rs.getInt("id");
+                    String text = rs.getString("text");
+
+                    // MySQL DATETIME -> LocalDateTime
+                    LocalDateTime created = rs.getObject("created_at", LocalDateTime.class);
+
+                    System.out.println("ID: " + id);
+                    System.out.println("Text: " + text);
+                    System.out.println("Zeitpunkt: " + created);
+                }
+            }
+        }
+    }
+}
+
+
